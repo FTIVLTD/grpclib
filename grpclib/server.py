@@ -9,6 +9,7 @@ import h2.exceptions
 
 from .utils import DeadlineWrapper
 from .const import Status
+from .events import DispatchServerEvents
 from .stream import send_message, recv_message
 from .stream import StreamIterator
 from .metadata import Deadline, encode_grpc_message
@@ -239,7 +240,9 @@ class Stream(StreamIterator):
         return True
 
 
-async def request_handler(mapping, _stream, headers, codec, release_stream):
+async def request_handler(mapping, _stream, headers, codec,
+                          dispatch: DispatchServerEvents,
+                          release_stream):
     try:
         headers_map = dict(headers)
 
@@ -313,6 +316,8 @@ async def request_handler(mapping, _stream, headers, codec, release_stream):
 
         metadata = decode_metadata(headers)
 
+        call_handler = await dispatch.call_handler(method.func, name=h2_path)
+
         async with Stream(_stream, method.cardinality, codec,
                           method.request_type, method.reply_type,
                           metadata=metadata, deadline=deadline) as stream:
@@ -322,9 +327,9 @@ async def request_handler(mapping, _stream, headers, codec, release_stream):
                     deadline_wrapper = DeadlineWrapper()
                     with deadline_wrapper.start(deadline):
                         with deadline_wrapper:
-                            await method.func(stream)
+                            await call_handler(stream)
                 else:
-                    await method.func(stream)
+                    await call_handler(stream)
             except asyncio.TimeoutError:
                 if deadline_wrapper and deadline_wrapper.cancelled:
                     log.exception('Deadline exceeded')
@@ -367,9 +372,10 @@ class Handler(_GC, AbstractHandler):
 
     closing = False
 
-    def __init__(self, mapping, codec, *, loop):
+    def __init__(self, mapping, codec, dispatch, *, loop):
         self.mapping = mapping
         self.codec = codec
+        self.dispatch = dispatch
         self.loop = loop
         self._tasks = {}
         self._cancelled = set()
@@ -384,7 +390,7 @@ class Handler(_GC, AbstractHandler):
         self.__gc_step__()
         self._tasks[stream] = self.loop.create_task(
             request_handler(self.mapping, stream, headers, self.codec,
-                            release_stream)
+                            self.dispatch, release_stream)
         )
 
     def cancel(self, stream):
@@ -447,13 +453,16 @@ class Server(_GC, asyncio.AbstractServer):
         self._server = None
         self._handlers = set()
 
+        self.__dispatch__ = DispatchServerEvents()
+
     def __gc_collect__(self):
         self._handlers = {h for h in self._handlers
                           if not (h.closing and h.check_closed())}
 
     def _protocol_factory(self):
         self.__gc_step__()
-        handler = Handler(self._mapping, self._codec, loop=self._loop)
+        handler = Handler(self._mapping, self._codec, self.__dispatch__,
+                          loop=self._loop)
         self._handlers.add(handler)
         return H2Protocol(handler, self._config, loop=self._loop)
 

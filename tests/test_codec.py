@@ -6,6 +6,7 @@ import grpclib.const
 import grpclib.server
 
 from grpclib.client import UnaryUnaryMethod
+from grpclib.events import DispatchServerEvents
 from grpclib.exceptions import GRPCError
 from grpclib.encoding.base import CodecBase
 
@@ -149,6 +150,7 @@ async def test_server_receive_json(loop):
         ss.server_h2s,
         ss.server_conn.server_proto.processor.handler.headers,
         JSONCodec(),
+        DispatchServerEvents(),
         lambda: None,
     )
     response_received, data_received, trailers_received, _ = \
@@ -182,6 +184,7 @@ async def test_server_receive_invalid(loop):
         ss.server_h2s,
         ss.server_conn.server_proto.processor.handler.headers,
         JSONCodec(),
+        DispatchServerEvents(),
         lambda: None,
     )
     response_received, _ = ss.server_conn.to_client_transport.events()
