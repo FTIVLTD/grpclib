@@ -1,11 +1,11 @@
 import pytest
 
-from grpclib.events import listen, Event, _Dispatch, _DispatchMeta
+from grpclib.events import listen, LoadedEvent, _Dispatch, _DispatchMeta
 from grpclib.events import _dispatches, _ident
 
 
-class MyEvent(Event):
-    __slots__ = Event.__slots__ + ('extra',)
+class MyEvent(LoadedEvent):
+    __slots__ = LoadedEvent.__slots__ + ('extra',)
 
     def __init__(self, payload, *, extra):
         super().__init__(payload)

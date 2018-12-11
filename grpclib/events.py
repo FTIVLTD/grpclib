@@ -2,7 +2,11 @@ from collections import defaultdict
 
 
 class Event:
-    __slots__ = ('payload', 'intercepted')
+    __slots__ = ()
+
+
+class LoadedEvent(Event):
+    __slots__ = Event.__slots__ + ('payload', 'intercepted')
 
     def __init__(self, payload):
         self.payload = payload
@@ -62,8 +66,8 @@ class _DispatchMeta(type):
         return super().__new__(mcs, name, bases, params)
 
 
-class CallHandler(Event):
-    __slots__ = Event.__slots__ + ('name',)
+class CallHandler(LoadedEvent):
+    __slots__ = LoadedEvent.__slots__ + ('name',)
 
     def __init__(self, payload, *, name):
         super().__init__(payload)
