@@ -34,6 +34,9 @@ server:
 server_streaming:
 	@PYTHONPATH=example python3 -m streaming.server
 
+server_tracing:
+	@PYTHONPATH=example python3 -m tracing.server
+
 _server:
 	@PYTHONPATH=example python3 -m _reference.server
 
@@ -42,6 +45,9 @@ client:
 
 client_streaming:
 	@PYTHONPATH=example python3 -m streaming.client
+
+client_tracing:
+	@PYTHONPATH=example python3 -m tracing.client
 
 _client:
 	@PYTHONPATH=example python3 -m _reference.client

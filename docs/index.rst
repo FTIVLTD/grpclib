@@ -10,6 +10,7 @@ User's Guide
   client
   server
   encoding
+  events
   reflection
   health
   testing

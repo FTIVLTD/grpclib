@@ -66,6 +66,31 @@ class _DispatchMeta(type):
         return super().__new__(mcs, name, bases, params)
 
 
+def listen(target, event_type, callback):
+    """Register a listener function for the given target and event type
+
+    .. code-block:: python
+
+        async def callback(event: RequestReceived):
+            print(event.payload)
+
+        listen(server, RequestReceived, callback)
+    """
+    target.__dispatch__.add_listener(event_type, callback)
+
+
+class RequestReceived(LoadedEvent):
+    """Dispatches when request was received and a task was launched to handle
+    this request
+
+    .. py:attribute:: payload
+
+        Request headers as a mutable MultiDict
+
+    """
+    __slots__ = LoadedEvent.__slots__ + ()
+
+
 class CallHandler(LoadedEvent):
     __slots__ = LoadedEvent.__slots__ + ('name',)
 
@@ -76,10 +101,28 @@ class CallHandler(LoadedEvent):
 
 class DispatchServerEvents(_Dispatch, metaclass=_DispatchMeta):
 
+    @_dispatches(RequestReceived)
+    async def request_received(self, payload):
+        return await self.__dispatch__(RequestReceived(payload))
+
     @_dispatches(CallHandler)
     async def call_handler(self, payload, *, name):
         return await self.__dispatch__(CallHandler(payload, name=name))
 
 
-def listen(target, event_type, callback):
-    target.__dispatch__.add_listener(event_type, callback)
+class SendRequest(LoadedEvent):
+    """Dispatches before sending request
+
+    .. py:attribute:: payload
+
+        Request metadata as a mutable MultiDict
+
+    """
+    __slots__ = LoadedEvent.__slots__ + ()
+
+
+class DispatchChannelEvents(_Dispatch, metaclass=_DispatchMeta):
+
+    @_dispatches(SendRequest)
+    async def send_request(self, payload):
+        return await self.__dispatch__(SendRequest(payload))

@@ -8,6 +8,7 @@ from h2.settings import SettingCodes
 
 from grpclib.const import Status
 from grpclib.client import Stream
+from grpclib.events import DispatchChannelEvents
 from grpclib.metadata import Request
 from grpclib.exceptions import GRPCError, StreamTerminatedError
 from grpclib.encoding.proto import ProtoCodec
@@ -75,8 +76,8 @@ async def test_connection_error():
         def __connect__(self):
             raise IOError('Intentionally broken connection')
 
-    stream = Stream(BrokenChannel(), request, ProtoCodec(),
-                    DummyRequest, DummyReply)
+    stream = Stream(BrokenChannel(), request, {}, ProtoCodec(),
+                    DummyRequest, DummyReply, DispatchChannelEvents())
 
     with pytest.raises(IOError) as err:
         async with stream:

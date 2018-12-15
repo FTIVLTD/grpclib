@@ -7,6 +7,8 @@ import warnings
 import h2.config
 import h2.exceptions
 
+from multidict import MultiDict
+
 from .utils import DeadlineWrapper
 from .const import Status
 from .events import DispatchServerEvents
@@ -244,7 +246,7 @@ async def request_handler(mapping, _stream, headers, codec,
                           dispatch: DispatchServerEvents,
                           release_stream):
     try:
-        headers_map = dict(headers)
+        headers_map = await dispatch.request_received(MultiDict(headers))
 
         if headers_map[':method'] != 'POST':
             await _stream.send_headers([

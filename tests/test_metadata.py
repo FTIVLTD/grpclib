@@ -56,8 +56,8 @@ def test_headers_with_deadline():
     assert Request(
         method='briana', scheme='dismal', path='dost', authority='lemnos',
         content_type='gazebos',
-        metadata=metadata, deadline=deadline,
-    ).to_headers() == [
+        deadline=deadline,
+    ).to_headers(metadata) == [
         (':method', 'briana'),
         (':scheme', 'dismal'),
         (':path', 'dost'),
@@ -73,8 +73,8 @@ def test_headers_with_deadline():
         content_type='gazebos',
         message_type='dobson', message_encoding='patera',
         message_accept_encoding='shakers', user_agent='dowlin',
-        metadata=metadata, deadline=deadline,
-    ).to_headers() == [
+        deadline=deadline,
+    ).to_headers(metadata) == [
         (':method', 'briana'),
         (':scheme', 'dismal'),
         (':path', 'dost'),
@@ -96,8 +96,7 @@ def test_headers_without_deadline():
     assert Request(
         method='flysch', scheme='plains', path='slaps', authority='darrin',
         content_type='pemako',
-        metadata=metadata,
-    ).to_headers() == [
+    ).to_headers(metadata) == [
         (':method', 'flysch'),
         (':scheme', 'plains'),
         (':path', 'slaps'),
@@ -112,8 +111,7 @@ def test_headers_without_deadline():
         content_type='pemako',
         message_type='deltic', message_encoding='eutexia',
         message_accept_encoding='glyptic', user_agent='chrisom',
-        metadata=metadata,
-    ).to_headers() == [
+    ).to_headers(metadata) == [
         (':method', 'flysch'),
         (':scheme', 'plains'),
         (':path', 'slaps'),

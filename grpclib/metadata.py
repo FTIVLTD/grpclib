@@ -96,20 +96,20 @@ class Request(namedtuple('Request', [
     'method', 'scheme', 'path', 'authority',
     'content_type', 'message_type', 'message_encoding',
     'message_accept_encoding', 'user_agent',
-    'metadata', 'deadline',
+    'deadline',
 ])):
     __slots__ = tuple()
 
     def __new__(cls, *, method, scheme, path, authority,
                 content_type, message_type=None, message_encoding=None,
                 message_accept_encoding=None, user_agent=None,
-                metadata=None, deadline=None):
+                deadline=None):
         return super().__new__(cls, method, scheme, path, authority,
                                content_type, message_type, message_encoding,
                                message_accept_encoding, user_agent,
-                               metadata, deadline)
+                               deadline)
 
-    def to_headers(self):
+    def to_headers(self, metadata=()):
         result = [
             (':method', self.method),
             (':scheme', self.scheme),
@@ -137,8 +137,7 @@ class Request(namedtuple('Request', [
         if self.user_agent is not None:
             result.append(('user-agent', self.user_agent))
 
-        if self.metadata is not None:
-            result.extend(self.metadata)
+        result.extend(metadata)
 
         return result
 

@@ -8,11 +8,13 @@ except ImportError:
     ssl = None
 
 from h2.config import H2Configuration
+from multidict import MultiDict
 
 from .utils import Wrapper, DeadlineWrapper
 from .const import Status
 from .stream import send_message, recv_message
 from .stream import StreamIterator
+from .events import DispatchChannelEvents
 from .protocol import H2Protocol, AbstractHandler
 from .metadata import Request, Deadline, USER_AGENT, decode_grpc_message
 from .metadata import encode_metadata, decode_metadata
@@ -109,12 +111,15 @@ class Stream(StreamIterator):
     #: after :py:meth:`recv_trailing_metadata` coroutine succeeds.
     trailing_metadata = None
 
-    def __init__(self, channel, request, codec, send_type, recv_type):
+    def __init__(self, channel, request, metadata, codec, send_type, recv_type,
+                 dispatch):
         self._channel = channel
         self._request = request
+        self._metadata = metadata
         self._codec = codec
         self._send_type = send_type
         self._recv_type = recv_type
+        self._dispatch = dispatch
 
     async def send_request(self):
         """Coroutine to send request headers with metadata to the server.
@@ -132,8 +137,11 @@ class Stream(StreamIterator):
             protocol = await self._channel.__connect__()
             stream = protocol.processor.connection\
                 .create_stream(wrapper=self._wrapper)
+
+            metadata = await self._dispatch.send_request(self._metadata)
             release_stream = await stream.send_request(
-                self._request.to_headers(), _processor=protocol.processor,
+                self._request.to_headers(encode_metadata(metadata)),
+                _processor=protocol.processor,
             )
             self._stream = stream
             self._release_stream = release_stream
@@ -448,6 +456,8 @@ class Channel:
         self._scheme = 'https' if self._ssl else 'http'
         self._connect_lock = asyncio.Lock(loop=self._loop)
 
+        self.__dispatch__ = DispatchChannelEvents()
+
     def __repr__(self):
         return ('Channel({!r}, {!r}, ..., path={!r})'
                 .format(self._host, self._port, self._path))
@@ -506,8 +516,7 @@ class Channel:
         else:
             deadline = None
 
-        if metadata is not None:
-            metadata = encode_metadata(metadata)
+        metadata = MultiDict(metadata or ())
 
         request = Request(
             method='POST',
@@ -516,11 +525,11 @@ class Channel:
             authority=self._authority,
             content_type=self._content_type,
             user_agent=USER_AGENT,
-            metadata=metadata,
             deadline=deadline,
         )
 
-        return Stream(self, request, self._codec, request_type, reply_type)
+        return Stream(self, request, metadata, self._codec,
+                      request_type, reply_type, self.__dispatch__)
 
     def close(self):
         """Closes connection to the server.
