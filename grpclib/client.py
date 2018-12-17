@@ -17,7 +17,7 @@ from .stream import StreamIterator
 from .events import DispatchChannelEvents
 from .protocol import H2Protocol, AbstractHandler
 from .metadata import Request, Deadline, USER_AGENT, decode_grpc_message
-from .metadata import encode_metadata, decode_metadata
+from .metadata import encode_metadata, decode_metadata, encode_timeout
 from .exceptions import GRPCError, ProtocolError, StreamTerminatedError
 from .encoding.base import GRPC_CONTENT_TYPE
 from .encoding.proto import ProtoCodec
@@ -112,14 +112,22 @@ class Stream(StreamIterator):
     trailing_metadata = None
 
     def __init__(self, channel, request, metadata, codec, send_type, recv_type,
-                 dispatch):
+                 dispatch: DispatchChannelEvents):
         self._channel = channel
-        self._request = request
         self._metadata = metadata
         self._codec = codec
         self._send_type = send_type
         self._recv_type = recv_type
         self._dispatch = dispatch
+
+        self._scheme = request.scheme
+        self._path = request.path
+        self._authority = request.authority
+        self._content_type = request.content_type
+        self._deadline = request.deadline
+        self._grpc_message_type = request.message_type
+        self._grpc_encoding = request.message_encoding
+        self._grpc_accept_encoding = request.message_accept_encoding
 
     async def send_request(self):
         """Coroutine to send request headers with metadata to the server.
@@ -138,9 +146,35 @@ class Stream(StreamIterator):
             stream = protocol.processor.connection\
                 .create_stream(wrapper=self._wrapper)
 
-            metadata = await self._dispatch.send_request(self._metadata)
+            metadata = await self._dispatch.send_request(
+                self._metadata,
+                scheme=self._scheme,
+                path=self._path,
+                authority=self._authority,
+            )
+            headers = [
+                (':method', 'POST'),
+                (':scheme', self._scheme),
+                (':path', self._path),
+                (':authority', self._authority),
+            ]
+            if self._deadline is not None:
+                timeout = self._deadline.time_remaining()
+                headers.append(('grpc-timeout', encode_timeout(timeout)))
+            headers.append(('te', 'trailers'))
+            headers.append(('content-type', self._content_type))
+            if self._grpc_message_type is not None:
+                headers.append(('grpc-message-type', self._grpc_message_type))
+            if self._grpc_encoding is not None:
+                headers.append(('grpc-encoding', self._grpc_encoding))
+            if self._grpc_accept_encoding is not None:
+                headers.append(('grpc-accept-encoding',
+                               self._grpc_accept_encoding))
+            headers.append(('user-agent', USER_AGENT))
+            headers.extend(encode_metadata(metadata))
+
             release_stream = await stream.send_request(
-                self._request.to_headers(encode_metadata(metadata)),
+                headers,
                 _processor=protocol.processor,
             )
             self._stream = stream
@@ -362,11 +396,11 @@ class Stream(StreamIterator):
             self._cancel_done = True
 
     async def __aenter__(self):
-        if self._request.deadline is None:
+        if self._deadline is None:
             self._wrapper = Wrapper()
         else:
             self._wrapper = DeadlineWrapper()
-            self._wrapper_ctx = self._wrapper.start(self._request.deadline)
+            self._wrapper_ctx = self._wrapper.start(self._deadline)
             self._wrapper_ctx.__enter__()
         return self
 

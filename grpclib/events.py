@@ -88,26 +88,41 @@ class RequestReceived(LoadedEvent):
         Request headers as a mutable MultiDict
 
     """
-    __slots__ = LoadedEvent.__slots__ + ()
+    __slots__ = LoadedEvent.__slots__ + ('path', 'deadline', 'user_agent')
 
-
-class CallHandler(LoadedEvent):
-    __slots__ = LoadedEvent.__slots__ + ('name',)
-
-    def __init__(self, payload, *, name):
+    def __init__(self, payload, *, path, deadline, user_agent):
         super().__init__(payload)
-        self.name = name
+        self.path = path
+        self.deadline = deadline
+        self.user_agent = user_agent
+
+
+class HandlerFound(LoadedEvent):
+    __slots__ = LoadedEvent.__slots__ \
+        + ('cardinality', 'request_type', 'reply_type')
+
+    def __init__(self, payload, *, cardinality, request_type, reply_type):
+        super().__init__(payload)
+        self.cardinality = cardinality
+        self.request_type = request_type
+        self.reply_type = reply_type
 
 
 class DispatchServerEvents(_Dispatch, metaclass=_DispatchMeta):
 
     @_dispatches(RequestReceived)
-    async def request_received(self, payload):
-        return await self.__dispatch__(RequestReceived(payload))
+    async def request_received(self, payload, *, path, deadline, user_agent):
+        return await self.__dispatch__(RequestReceived(
+            payload, path=path, deadline=deadline, user_agent=user_agent,
+        ))
 
-    @_dispatches(CallHandler)
-    async def call_handler(self, payload, *, name):
-        return await self.__dispatch__(CallHandler(payload, name=name))
+    @_dispatches(HandlerFound)
+    async def handler_found(self, payload, *, cardinality, request_type,
+                            reply_type):
+        return await self.__dispatch__(HandlerFound(
+            payload, cardinality=cardinality, request_type=request_type,
+            reply_type=reply_type,
+        ))
 
 
 class SendRequest(LoadedEvent):
@@ -118,11 +133,19 @@ class SendRequest(LoadedEvent):
         Request metadata as a mutable MultiDict
 
     """
-    __slots__ = LoadedEvent.__slots__ + ()
+    __slots__ = LoadedEvent.__slots__ + ('scheme', 'path', 'authority')
+
+    def __init__(self, payload, *, scheme, path, authority):
+        super().__init__(payload)
+        self.scheme = scheme
+        self.path = path
+        self.authority = authority
 
 
 class DispatchChannelEvents(_Dispatch, metaclass=_DispatchMeta):
 
     @_dispatches(SendRequest)
-    async def send_request(self, payload):
-        return await self.__dispatch__(SendRequest(payload))
+    async def send_request(self, payload, *, scheme, path, authority):
+        return await self.__dispatch__(SendRequest(
+            payload, scheme=scheme, path=path, authority=authority,
+        ))

@@ -242,29 +242,31 @@ class Stream(StreamIterator):
         return True
 
 
+async def _abort(h2_stream, h2_status, grpc_status=None, grpc_message=None):
+    headers = [(':status', str(h2_status))]
+    if grpc_status is not None:
+        headers.append(('grpc-status', str(grpc_status.value)))
+    if grpc_message is not None:
+        headers.append(('grpc-message', grpc_message))
+    await h2_stream.send_headers(headers, end_stream=True)
+    if h2_stream.closable:
+        h2_stream.reset_nowait()
+
+
 async def request_handler(mapping, _stream, headers, codec,
                           dispatch: DispatchServerEvents,
                           release_stream):
     try:
-        headers_map = await dispatch.request_received(MultiDict(headers))
+        headers_map = dict(headers)
 
         if headers_map[':method'] != 'POST':
-            await _stream.send_headers([
-                (':status', '405'),
-            ], end_stream=True)
-            if _stream.closable:
-                _stream.reset_nowait()
+            await _abort(_stream, 405)
             return
 
         content_type = headers_map.get('content-type')
         if content_type is None:
-            await _stream.send_headers([
-                (':status', '415'),
-                ('grpc-status', str(Status.UNKNOWN.value)),
-                ('grpc-message', 'Missing content-type header'),
-            ], end_stream=True)
-            if _stream.closable:
-                _stream.reset_nowait()
+            await _abort(_stream, 415, Status.UNKNOWN,
+                         'Missing content-type header')
             return
 
         base_content_type, _, sub_type = content_type.partition('+')
@@ -273,52 +275,47 @@ async def request_handler(mapping, _stream, headers, codec,
             base_content_type != GRPC_CONTENT_TYPE
             or sub_type != codec.__content_subtype__
         ):
-            await _stream.send_headers([
-                (':status', '415'),
-                ('grpc-status', str(Status.UNKNOWN.value)),
-                ('grpc-message', 'Unacceptable content-type header'),
-            ], end_stream=True)
-            if _stream.closable:
-                _stream.reset_nowait()
+            await _abort(_stream, 415, Status.UNKNOWN,
+                         'Unacceptable content-type header')
             return
 
         if headers_map.get('te') != 'trailers':
-            await _stream.send_headers([
-                (':status', '400'),
-                ('grpc-status', str(Status.UNKNOWN.value)),
-                ('grpc-message', 'Required "te: trailers" header is missing'),
-            ], end_stream=True)
-            if _stream.closable:
-                _stream.reset_nowait()
-            return
-
-        h2_path = headers_map[':path']
-        method = mapping.get(h2_path)
-        if method is None:
-            await _stream.send_headers([
-                (':status', '200'),
-                ('grpc-status', str(Status.UNIMPLEMENTED.value)),
-                ('grpc-message', 'Method not found'),
-            ], end_stream=True)
-            if _stream.closable:
-                _stream.reset_nowait()
+            await _abort(_stream, 400, Status.UNKNOWN,
+                         'Required "te: trailers" header is missing')
             return
 
         try:
             deadline = Deadline.from_headers(headers)
         except ValueError:
-            await _stream.send_headers([
-                (':status', '200'),
-                ('grpc-status', str(Status.UNKNOWN.value)),
-                ('grpc-message', 'Invalid grpc-timeout header'),
-            ], end_stream=True)
-            if _stream.closable:
-                _stream.reset_nowait()
+            await _abort(_stream, 200, Status.UNKNOWN,
+                         'Invalid grpc-timeout header')
             return
 
-        metadata = decode_metadata(headers)
+        h2_path = headers_map[':path']
+        method = mapping.get(h2_path)
+        if method is None:
+            await _abort(_stream, 200, Status.UNIMPLEMENTED,
+                         'Method not found')
+            return
 
-        call_handler = await dispatch.call_handler(method.func, name=h2_path)
+        # TODO: should generate nice errors with :status 200
+        metadata = await dispatch.request_received(
+            decode_metadata(headers),
+            path=h2_path,
+            deadline=deadline,
+            authority=headers_map[':authority'],
+            user_agent=headers_map.get('user-agent'),
+            content_type=content_type,
+        )
+
+        # FIXME: move inside deadline_wrapper ctx manager
+        call_handler = await dispatch.handler_found(
+            method.func,
+            path=h2_path,
+            cardinality=method.cardinality,
+            request_type=method.request_type,
+            reply_type=method.reply_type,
+        )
 
         async with Stream(_stream, method.cardinality, codec,
                           method.request_type, method.reply_type,
@@ -347,6 +344,8 @@ async def request_handler(mapping, _stream, headers, codec,
                 raise
     except Exception:
         log.exception('Server error')
+        if _stream.closable:
+            _stream.reset_nowait()
     finally:
         release_stream()
 

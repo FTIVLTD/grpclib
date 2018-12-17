@@ -11,7 +11,7 @@ Server Events
 -------------
 
 .. automodule:: grpclib.events
-    :members: RequestReceived
+    :members: RequestReceived, HandlerFound
 
 Channel Events
 --------------

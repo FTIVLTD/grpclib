@@ -109,38 +109,6 @@ class Request(namedtuple('Request', [
                                message_accept_encoding, user_agent,
                                deadline)
 
-    def to_headers(self, metadata=()):
-        result = [
-            (':method', self.method),
-            (':scheme', self.scheme),
-            (':path', self.path),
-            (':authority', self.authority),
-        ]
-
-        if self.deadline is not None:
-            timeout = self.deadline.time_remaining()
-            result.append(('grpc-timeout', encode_timeout(timeout)))
-
-        result.append(('te', 'trailers'))
-        result.append(('content-type', self.content_type))
-
-        if self.message_type is not None:
-            result.append(('grpc-message-type', self.message_type))
-
-        if self.message_encoding is not None:
-            result.append(('grpc-encoding', self.message_encoding))
-
-        if self.message_accept_encoding is not None:
-            result.append(('grpc-accept-encoding',
-                          self.message_accept_encoding))
-
-        if self.user_agent is not None:
-            result.append(('user-agent', self.user_agent))
-
-        result.extend(metadata)
-
-        return result
-
 
 _UNQUOTED = ''.join([chr(i) for i in range(0x20, 0x24 + 1)]
                     + [chr(i) for i in range(0x26, 0x7E + 1)])
