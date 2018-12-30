@@ -74,10 +74,13 @@ class DeadlineWrapper(Wrapper):
                 await asyncio.sleep(10)
 
     """
+    def __init__(self, deadline):
+        self._deadline = deadline
+
     @contextmanager
-    def start(self, deadline, *, loop=None):
+    def start(self, *, loop=None):
         loop = loop or asyncio.get_event_loop()
-        timeout = deadline.time_remaining()
+        timeout = self._deadline.time_remaining()
         if not timeout:
             raise asyncio.TimeoutError('Deadline exceeded')
 
@@ -89,6 +92,13 @@ class DeadlineWrapper(Wrapper):
             yield self
         finally:
             timer.cancel()
+
+
+class DummyDeadlineWrapper(Wrapper):
+
+    @contextmanager
+    def start(self):
+        yield self
 
 
 def _service_name(service):

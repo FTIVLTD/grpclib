@@ -8,7 +8,7 @@ class Event:
 class LoadedEvent(Event):
     __slots__ = Event.__slots__ + ('payload', 'intercepted')
 
-    def __init__(self, payload):
+    def __init__(self, *payload):
         self.payload = payload
         self.intercepted = False
 
@@ -20,8 +20,8 @@ class LoadedEvent(Event):
         self.payload = value
 
 
-async def _ident(payload, **kwargs):
-    return payload
+async def _ident(*args, **_):
+    return args
 
 
 def _dispatches(event_type):
@@ -97,31 +97,12 @@ class RequestReceived(LoadedEvent):
         self.user_agent = user_agent
 
 
-class HandlerFound(LoadedEvent):
-    __slots__ = LoadedEvent.__slots__ \
-        + ('cardinality', 'request_type', 'reply_type')
-
-    def __init__(self, payload, *, cardinality, request_type, reply_type):
-        super().__init__(payload)
-        self.cardinality = cardinality
-        self.request_type = request_type
-        self.reply_type = reply_type
-
-
 class DispatchServerEvents(_Dispatch, metaclass=_DispatchMeta):
 
     @_dispatches(RequestReceived)
     async def request_received(self, payload, *, path, deadline, user_agent):
         return await self.__dispatch__(RequestReceived(
             payload, path=path, deadline=deadline, user_agent=user_agent,
-        ))
-
-    @_dispatches(HandlerFound)
-    async def handler_found(self, payload, *, cardinality, request_type,
-                            reply_type):
-        return await self.__dispatch__(HandlerFound(
-            payload, cardinality=cardinality, request_type=request_type,
-            reply_type=reply_type,
         ))
 
 
@@ -146,6 +127,6 @@ class DispatchChannelEvents(_Dispatch, metaclass=_DispatchMeta):
 
     @_dispatches(SendRequest)
     async def send_request(self, payload, *, scheme, path, authority):
-        return await self.__dispatch__(SendRequest(
-            payload, scheme=scheme, path=path, authority=authority,
-        ))
+        return await self.__dispatch__(
+            SendRequest(payload, scheme=scheme, path=path, authority=authority)
+        )

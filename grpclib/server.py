@@ -9,7 +9,7 @@ import h2.exceptions
 
 from multidict import MultiDict
 
-from .utils import DeadlineWrapper
+from .utils import DeadlineWrapper, DummyDeadlineWrapper
 from .const import Status
 from .events import DispatchServerEvents
 from .stream import send_message, recv_message
@@ -253,6 +253,21 @@ async def _abort(h2_stream, h2_status, grpc_status=None, grpc_message=None):
         h2_stream.reset_nowait()
 
 
+async def wrap_call(stream, call_handler):
+    metadata, call_handler = await dispatch.request_received(
+        decode_metadata(headers),
+        call_handler,
+        path=h2_path,
+        deadline=deadline,
+        user_agent=headers.get('user-agent'),
+        cardinality=method.cardinality,
+        request_type=method.request_type,
+        reply_type=method.reply_type,
+    )
+    stream.metadata = metadata
+    await call_handler(stream)
+
+
 async def request_handler(mapping, _stream, headers, codec,
                           dispatch: DispatchServerEvents,
                           release_stream):
@@ -284,13 +299,6 @@ async def request_handler(mapping, _stream, headers, codec,
                          'Required "te: trailers" header is missing')
             return
 
-        try:
-            deadline = Deadline.from_headers(headers)
-        except ValueError:
-            await _abort(_stream, 200, Status.UNKNOWN,
-                         'Invalid grpc-timeout header')
-            return
-
         h2_path = headers_map[':path']
         method = mapping.get(h2_path)
         if method is None:
@@ -298,20 +306,24 @@ async def request_handler(mapping, _stream, headers, codec,
                          'Method not found')
             return
 
-        # TODO: should generate nice errors with :status 200
-        metadata = await dispatch.request_received(
-            decode_metadata(headers),
-            path=h2_path,
-            deadline=deadline,
-            authority=headers_map[':authority'],
-            user_agent=headers_map.get('user-agent'),
-            content_type=content_type,
-        )
+        try:
+            deadline = Deadline.from_headers(headers)
+        except ValueError:
+            await _abort(_stream, 200, Status.UNKNOWN,
+                         'Invalid grpc-timeout header')
+            return
 
-        # FIXME: move inside deadline_wrapper ctx manager
-        call_handler = await dispatch.handler_found(
+        if deadline is not None:
+            deadline_wrapper = DeadlineWrapper(deadline)
+        else:
+            deadline_wrapper = DummyDeadlineWrapper()
+
+        metadata, call_handler = await dispatch.request_received(
+            decode_metadata(headers),
             method.func,
             path=h2_path,
+            deadline=deadline,
+            user_agent=headers.get('user-agent'),
             cardinality=method.cardinality,
             request_type=method.request_type,
             reply_type=method.reply_type,
@@ -320,17 +332,12 @@ async def request_handler(mapping, _stream, headers, codec,
         async with Stream(_stream, method.cardinality, codec,
                           method.request_type, method.reply_type,
                           metadata=metadata, deadline=deadline) as stream:
-            deadline_wrapper = None
             try:
-                if deadline:
-                    deadline_wrapper = DeadlineWrapper()
-                    with deadline_wrapper.start(deadline):
-                        with deadline_wrapper:
-                            await call_handler(stream)
-                else:
-                    await call_handler(stream)
+                with deadline_wrapper.start():
+                    with deadline_wrapper:
+                        await wrap_call(stream, call_handler)
             except asyncio.TimeoutError:
-                if deadline_wrapper and deadline_wrapper.cancelled:
+                if deadline_wrapper.cancelled:
                     log.exception('Deadline exceeded')
                     raise GRPCError(Status.DEADLINE_EXCEEDED)
                 else:
@@ -344,8 +351,6 @@ async def request_handler(mapping, _stream, headers, codec,
                 raise
     except Exception:
         log.exception('Server error')
-        if _stream.closable:
-            _stream.reset_nowait()
     finally:
         release_stream()
 

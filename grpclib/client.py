@@ -16,8 +16,9 @@ from .stream import send_message, recv_message
 from .stream import StreamIterator
 from .events import DispatchChannelEvents
 from .protocol import H2Protocol, AbstractHandler
-from .metadata import Request, Deadline, USER_AGENT, decode_grpc_message
-from .metadata import encode_metadata, decode_metadata, encode_timeout
+from .metadata import Request, Deadline, USER_AGENT, decode_grpc_message, \
+    encode_timeout
+from .metadata import encode_metadata, decode_metadata
 from .exceptions import GRPCError, ProtocolError, StreamTerminatedError
 from .encoding.base import GRPC_CONTENT_TYPE
 from .encoding.proto import ProtoCodec
@@ -120,14 +121,14 @@ class Stream(StreamIterator):
         self._recv_type = recv_type
         self._dispatch = dispatch
 
-        self._scheme = request.scheme
-        self._path = request.path
-        self._authority = request.authority
-        self._content_type = request.content_type
         self._deadline = request.deadline
-        self._grpc_message_type = request.message_type
-        self._grpc_encoding = request.message_encoding
-        self._grpc_accept_encoding = request.message_accept_encoding
+        self._request_scheme = request.scheme
+        self._request_path = request.path
+        self._request_authority = request.authority
+        self._request_content_type = request.content_type
+        self._message_type = request.message_type
+        self._message_encoding = request.message_encoding
+        self._message_accept_encoding = request.message_accept_encoding
 
     async def send_request(self):
         """Coroutine to send request headers with metadata to the server.
@@ -148,28 +149,28 @@ class Stream(StreamIterator):
 
             metadata = await self._dispatch.send_request(
                 self._metadata,
-                scheme=self._scheme,
-                path=self._path,
-                authority=self._authority,
+                scheme=self._request_scheme,
+                path=self._request_path,
+                authority=self._request_authority,
             )
             headers = [
                 (':method', 'POST'),
-                (':scheme', self._scheme),
-                (':path', self._path),
-                (':authority', self._authority),
+                (':scheme', self._request_scheme),
+                (':path', self._request_path),
+                (':authority', self._request_authority),
             ]
             if self._deadline is not None:
                 timeout = self._deadline.time_remaining()
                 headers.append(('grpc-timeout', encode_timeout(timeout)))
             headers.append(('te', 'trailers'))
-            headers.append(('content-type', self._content_type))
-            if self._grpc_message_type is not None:
-                headers.append(('grpc-message-type', self._grpc_message_type))
-            if self._grpc_encoding is not None:
-                headers.append(('grpc-encoding', self._grpc_encoding))
-            if self._grpc_accept_encoding is not None:
+            headers.append(('content-type', self._request_content_type))
+            if self._message_type is not None:
+                headers.append(('grpc-message-type', self._message_type))
+            if self._message_encoding is not None:
+                headers.append(('grpc-encoding', self._message_encoding))
+            if self._message_accept_encoding is not None:
                 headers.append(('grpc-accept-encoding',
-                               self._grpc_accept_encoding))
+                               self._message_accept_encoding))
             headers.append(('user-agent', USER_AGENT))
             headers.extend(encode_metadata(metadata))
 
