@@ -1,4 +1,8 @@
+import sys
+import time
+import signal
 import asyncio
+import subprocess
 
 import pytest
 
@@ -51,3 +55,34 @@ async def test_deadline_wrapper(loop):
         with pytest.raises(asyncio.TimeoutError) as err:
             await api.foo(time=0.0001)
         assert err.match('Deadline exceeded')
+
+
+SCRIPT = """
+import asyncio
+
+from grpclib.utils import graceful_exit
+from grpclib.server import Server
+
+async def main():
+    server = Server([], loop=asyncio.get_event_loop())
+    await server.start('127.0.0.1')
+    print("Started!")
+    await graceful_exit([server])
+
+asyncio.run(main())
+"""
+
+
+@pytest.mark.skipif(sys.version_info < (3, 7, 0), reason='Python < 3.7.0')
+@pytest.mark.parametrize('sig_num', [signal.SIGINT, signal.SIGTERM])
+def test_graceful_exit(sig_num):
+    cmd = [sys.executable, '-u', '-c', SCRIPT]
+    with subprocess.Popen(cmd, stdout=subprocess.PIPE) as proc:
+        try:
+            assert proc.stdout.readline() == b'Started!\n'
+            time.sleep(0.001)
+            proc.send_signal(sig_num)
+            assert proc.wait(1) == 128 + sig_num
+        finally:
+            if proc.returncode is None:
+                proc.kill()

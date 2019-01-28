@@ -1,4 +1,5 @@
 import sys
+import signal
 import asyncio
 
 from contextlib import contextmanager
@@ -97,3 +98,56 @@ def _service_name(service):
     assert method_name is not None
     _, service_name, _ = method_name.split('/')
     return service_name
+
+
+def _signal_handler(sig_num):
+    raise SystemExit(128 + sig_num)
+
+
+async def graceful_exit(servers, *,
+                        signals=frozenset({signal.SIGINT, signal.SIGTERM})):
+    """Utility coroutine to properly close servers when receive OS signals
+
+    It waits indefinitely until process receives ``SIGINT`` or ``SIGTERM``
+    signal (by default). Then it properly closes servers and
+    :py:class:`python:asyncio.CancelledError` is propagated up
+    by the call stack (this is OK).
+
+    Example:
+
+    .. code-block:: python
+
+        async def main():
+            ...
+            server = Server(handlers, loop=loop)
+            await server.start(host, port)
+            await graceful_exit([server])
+
+    This coroutine is designed to work with :py:func:`python:asyncio.run`
+    function, introduced in Python 3.7:
+
+    .. code-block:: python
+
+        if __name__ == '__main__':
+            asyncio.run(main())
+
+    .. note:: This coroutine exits if one of the servers closes unexpectedly
+      for whatever reason. So a process supervisor will be able to restart
+      our process and recover from some temporary error or notify
+      about our failure.
+
+    :param servers: list of servers
+    :param signals: set of the OS signals to handle
+    """
+    loop = asyncio.get_event_loop()
+    for sig_num in signals:
+        loop.add_signal_handler(sig_num, _signal_handler, sig_num)
+    try:
+        await asyncio.wait({server.wait_closed() for server in servers},
+                           return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for sig_num in signals:
+            loop.remove_signal_handler(sig_num)
+        for server in servers:
+            server.close()
+        await asyncio.gather(*[server.wait_closed() for server in servers])

@@ -1,5 +1,6 @@
 import asyncio
 
+from grpclib.utils import graceful_exit
 from grpclib.server import Server
 
 from .helloworld_pb2 import HelloReply
@@ -14,23 +15,12 @@ class Greeter(GreeterBase):
         await stream.send_message(HelloReply(message=message))
 
 
-async def serve(server, *, host='127.0.0.1', port=50051):
+async def main(*, host='127.0.0.1', port=50051):
+    server = Server([Greeter()], loop=asyncio.get_event_loop())
     await server.start(host, port)
     print('Serving on {}:{}'.format(host, port))
-    try:
-        await server.wait_closed()
-    except asyncio.CancelledError:
-        server.close()
-        await server.wait_closed()
-
-
-async def main():
-    server = Server([Greeter()], loop=asyncio.get_event_loop())
-    await serve(server)
+    await graceful_exit([server])
 
 
 if __name__ == '__main__':
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        pass
+    asyncio.run(main())
