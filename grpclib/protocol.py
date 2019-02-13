@@ -1,4 +1,5 @@
 import socket
+import weakref
 
 from io import BytesIO
 from abc import ABC, abstractmethod
@@ -371,20 +372,20 @@ class EventsProcessor:
         self.connection = connection
 
         self.processors = {
-            RequestReceived: self.process_request_received,
-            ResponseReceived: self.process_response_received,
-            RemoteSettingsChanged: self.process_remote_settings_changed,
-            SettingsAcknowledged: self.process_settings_acknowledged,
-            DataReceived: self.process_data_received,
-            WindowUpdated: self.process_window_updated,
-            TrailersReceived: self.process_trailers_received,
-            StreamEnded: self.process_stream_ended,
-            StreamReset: self.process_stream_reset,
-            PriorityUpdated: self.process_priority_updated,
-            ConnectionTerminated: self.process_connection_terminated,
-            PingReceived: self.process_ping_received,
-            PingAckReceived: self.process_ping_ack_received,
-            PingAcknowledged: self.process_ping_ack_received,  # deprecated
+            RequestReceived: weakref.WeakMethod(self.process_request_received),
+            ResponseReceived: weakref.WeakMethod(self.process_response_received),
+            RemoteSettingsChanged: weakref.WeakMethod(self.process_remote_settings_changed),
+            SettingsAcknowledged: weakref.WeakMethod(self.process_settings_acknowledged),
+            DataReceived: weakref.WeakMethod(self.process_data_received),
+            WindowUpdated: weakref.WeakMethod(self.process_window_updated),
+            TrailersReceived: weakref.WeakMethod(self.process_trailers_received),
+            StreamEnded: weakref.WeakMethod(self.process_stream_ended),
+            StreamReset: weakref.WeakMethod(self.process_stream_reset),
+            PriorityUpdated: weakref.WeakMethod(self.process_priority_updated),
+            ConnectionTerminated: weakref.WeakMethod(self.process_connection_terminated),
+            PingReceived: weakref.WeakMethod(self.process_ping_received),
+            PingAckReceived: weakref.WeakMethod(self.process_ping_ack_received),
+            PingAcknowledged: weakref.WeakMethod(self.process_ping_ack_received),  # deprecated
         }
 
         self.streams = {}  # type: Dict[int, Stream]
@@ -416,7 +417,7 @@ class EventsProcessor:
         except KeyError:
             raise NotImplementedError(event)
         else:
-            proc(event)
+            proc()(event)
 
     def process_request_received(self, event: RequestReceived):
         stream = self.connection.create_stream(stream_id=event.stream_id)
